@@ -22,6 +22,7 @@ enum MetricType {
 
 typedef struct SplitBatchQuery SplitBatchQuery;
 typedef struct SplitSingleQuery SplitSingleQuery;
+typedef struct BatchQuery BatchQuery;
 
 RabitqConfig* rabitq_config_new();
 void rabitq_config_free(RabitqConfig* config);
@@ -153,6 +154,23 @@ void rabitq_split_single_fulldist(
     float* ip_x0_qr,
     float g_add,
     float g_error
+);
+
+// Batch Query
+BatchQuery* rabitq_batch_query_new(const float* rotated_query, size_t padded_dim);
+void rabitq_batch_query_free(BatchQuery* query);
+float rabitq_batch_query_delta(const BatchQuery* query);
+float rabitq_batch_query_sum_vl_lut(const BatchQuery* query);
+float rabitq_batch_query_k1xsumq(const BatchQuery* query);
+float rabitq_batch_query_g_add(const BatchQuery* query);
+void rabitq_batch_query_set_g_add(BatchQuery* query, float sqr_norm);
+const uint8_t* rabitq_batch_query_lut(const BatchQuery* query);
+
+void rabitq_qg_batch_estdist(
+    const char* batch_data,
+    const BatchQuery* q_obj,
+    size_t padded_dim,
+    float* est_distance
 );
 
 #ifdef __cplusplus

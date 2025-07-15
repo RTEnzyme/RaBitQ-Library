@@ -1,5 +1,5 @@
 use rabitq_sys::{
-    ex_ipfunc, rabitq_select_excode_ipfunc, rabitq_split_batch_estdist, rabitq_split_batch_query_free, rabitq_split_batch_query_new, rabitq_split_batch_query_set_g_add, rabitq_split_distance_boosting_with_batch_query, rabitq_split_distance_boosting_with_single_query, rabitq_split_single_estdist, rabitq_split_single_fulldist, rabitq_split_single_query_delta, rabitq_split_single_query_new, rabitq_split_single_query_query_bin, rabitq_split_single_query_set_g_add, rabitq_split_single_query_vl, MetricType, SplitBatchQuery, SplitSingleQuery
+    ex_ipfunc, rabitq_batch_query_delta, rabitq_batch_query_free, rabitq_batch_query_g_add, rabitq_batch_query_k1xsumq, rabitq_batch_query_lut, rabitq_batch_query_new, rabitq_batch_query_set_g_add, rabitq_batch_query_sum_vl_lut, rabitq_select_excode_ipfunc, rabitq_split_batch_estdist, rabitq_split_batch_query_free, rabitq_split_batch_query_new, rabitq_split_batch_query_set_g_add, rabitq_split_distance_boosting_with_batch_query, rabitq_split_distance_boosting_with_single_query, rabitq_split_single_estdist, rabitq_split_single_fulldist, rabitq_split_single_query_delta, rabitq_split_single_query_new, rabitq_split_single_query_query_bin, rabitq_split_single_query_set_g_add, rabitq_split_single_query_vl, BatchQuery, MetricType, SplitBatchQuery, SplitSingleQuery, rabitq_qg_batch_estdist
 };
 
 use crate::RabitqConfig;
@@ -8,12 +8,12 @@ pub fn select_excode_ipfunc(ex_bits: usize) -> ex_ipfunc {
     unsafe { rabitq_select_excode_ipfunc(ex_bits) }
 }
 
-pub struct BatchEstimator {
+pub struct SplitBatchEstimator {
     ptr: *mut SplitBatchQuery,
     padded_dim: usize,
 }
 
-impl BatchEstimator {
+impl SplitBatchEstimator {
     pub fn new(
         rotated_query: &[f32],
         padded_dim: usize,
@@ -77,10 +77,74 @@ impl BatchEstimator {
     }
 }
 
-impl Drop for BatchEstimator {
+impl Drop for SplitBatchEstimator {
     fn drop(&mut self) {
         unsafe {
             rabitq_split_batch_query_free(self.ptr);
+        }
+    }
+}
+
+pub struct BatchBinEstimator {
+    ptr: *mut BatchQuery,
+    padded_dim: usize,
+}
+
+impl BatchBinEstimator {
+    pub const K_BATCH_SIZE: usize = 32;
+    pub fn new(rotated_query: &[f32], padded_dim: usize) -> Self {
+        let ptr = unsafe { rabitq_batch_query_new(rotated_query.as_ptr(), padded_dim) };
+        Self { ptr, padded_dim }
+    }
+
+    pub fn delta(&self) -> f32 {
+        unsafe { rabitq_batch_query_delta(self.ptr) }
+    }
+
+    pub fn sum_vl_lut(&self) -> f32 {
+        unsafe { rabitq_batch_query_sum_vl_lut(self.ptr) }
+    }
+
+    pub fn k1xsumq(&self) -> f32 {
+        unsafe { rabitq_batch_query_k1xsumq(self.ptr) }
+    }
+
+    pub fn g_add(&self) -> f32 {
+        unsafe { rabitq_batch_query_g_add(self.ptr) }
+    }
+
+    pub fn set_g_add(&mut self, sqr_norm: f32) {
+        unsafe { rabitq_batch_query_set_g_add(self.ptr, sqr_norm) }
+    }
+
+    pub fn lut(&self) -> &[u8] {
+        let data = unsafe { rabitq_batch_query_lut(self.ptr) };
+        let len = (1 << 16) * std::mem::size_of::<f32>();
+        unsafe { std::slice::from_raw_parts(data, len) }
+    }
+
+     pub fn batch_est(&self, batch_data: &[u8], est_distance: &mut [f32]) {
+        assert_eq!(
+            est_distance.len(),
+            Self::K_BATCH_SIZE,
+            "The length of est_distance slice must be {}",
+            Self::K_BATCH_SIZE
+        );
+        unsafe {
+            rabitq_qg_batch_estdist(
+                batch_data.as_ptr() as *const i8,
+                self.ptr,
+                self.padded_dim,
+                est_distance.as_mut_ptr(),
+            )
+        };
+    }
+}
+
+impl Drop for BatchBinEstimator {
+    fn drop(&mut self) {
+        unsafe {
+            rabitq_batch_query_free(self.ptr);
         }
     }
 }

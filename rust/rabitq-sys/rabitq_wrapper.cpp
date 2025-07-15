@@ -265,4 +265,53 @@ void rabitq_split_single_fulldist(
     );
 }
 
+// BatchQuery
+BatchQuery* rabitq_batch_query_new(const float* rotated_query, size_t padded_dim) {
+    auto query = new rabitqlib::BatchQuery<float>(rotated_query, padded_dim);
+    return reinterpret_cast<BatchQuery*>(query);
+}
+
+void rabitq_batch_query_free(BatchQuery* query) {
+    delete reinterpret_cast<rabitqlib::BatchQuery<float>*>(query);
+}
+
+float rabitq_batch_query_delta(const BatchQuery* query) {
+    return reinterpret_cast<const rabitqlib::BatchQuery<float>*>(query)->delta();
+}
+
+float rabitq_batch_query_sum_vl_lut(const BatchQuery* query) {
+    return reinterpret_cast<const rabitqlib::BatchQuery<float>*>(query)->sum_vl_lut();
+}
+
+float rabitq_batch_query_k1xsumq(const BatchQuery* query) {
+    return reinterpret_cast<const rabitqlib::BatchQuery<float>*>(query)->k1xsumq();
+}
+
+float rabitq_batch_query_g_add(const BatchQuery* query) {
+    return reinterpret_cast<const rabitqlib::BatchQuery<float>*>(query)->g_add();
+}
+
+void rabitq_batch_query_set_g_add(BatchQuery* query, float sqr_norm) {
+    reinterpret_cast<rabitqlib::BatchQuery<float>*>(query)->set_g_add(sqr_norm);
+}
+
+const uint8_t* rabitq_batch_query_lut(const BatchQuery* query) {
+    return reinterpret_cast<const rabitqlib::BatchQuery<float>*>(query)->lut();
+}
+
+void rabitq_qg_batch_estdist(
+    const char* batch_data,
+    const BatchQuery* q_obj,
+    size_t padded_dim,
+    float* est_distance
+) {
+    const auto* cpp_q_obj = reinterpret_cast<const rabitqlib::BatchQuery<float>*>(q_obj);
+    rabitqlib::qg_batch_estdist(
+        batch_data,
+        *cpp_q_obj,
+        padded_dim,
+        est_distance
+    );
+}
+
 }
