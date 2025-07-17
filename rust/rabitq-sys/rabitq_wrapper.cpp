@@ -236,6 +236,19 @@ float rabitq_split_distance_boosting_with_single_query(
         ex_data, ip_func, *cpp_q_obj, padded_dim, ex_bits, ip_x0_qr);
 }
 
+float rabitq_split_distance_boosting_with_centroid_query(
+    const char* ex_data,
+    ex_ipfunc ip_func,
+    const SingleCentroidQuery* q_obj,
+    size_t padded_dim,
+    size_t ex_bits,
+    float ip_x0_qr
+) {
+    const auto* cpp_q_obj = reinterpret_cast<const rabitqlib::SingleCentroidQuery<float>*>(q_obj);
+    return rabitqlib::split_distance_boosting(
+        ex_data, ip_func, *cpp_q_obj, padded_dim, ex_bits, ip_x0_qr);
+}
+
 void rabitq_split_single_fulldist(
     const char* bin_data,
     const char* ex_data,
@@ -314,4 +327,120 @@ void rabitq_qg_batch_estdist(
     );
 }
 
+// SingleCentroidQuery
+SingleCentroidQuery* rabitq_single_centroid_query_new(
+    const float* rotated_query,
+    const float* centroid,
+    size_t padded_dim,
+    size_t ex_bits,
+    const RabitqConfig* config,
+    MetricType metric_type
+) {
+    const auto* cpp_config = reinterpret_cast<const rabitqlib::quant::RabitqConfig*>(config);
+    auto query = new rabitqlib::SingleCentroidQuery<float>(
+        rotated_query,
+        centroid,
+        padded_dim,
+        ex_bits,
+        *cpp_config,
+        static_cast<rabitqlib::MetricType>(metric_type)
+    );
+    return reinterpret_cast<SingleCentroidQuery*>(query);
+}
+
+void rabitq_single_centroid_query_free(SingleCentroidQuery* query) {
+    delete reinterpret_cast<rabitqlib::SingleCentroidQuery<float>*>(query);
+}
+
+const uint64_t* rabitq_single_centroid_query_query_bin(const SingleCentroidQuery* query) {
+    return reinterpret_cast<const rabitqlib::SingleCentroidQuery<float>*>(query)->query_bin();
+}
+
+const float* rabitq_single_centroid_query_rotated_query(const SingleCentroidQuery* query) {
+    return reinterpret_cast<const rabitqlib::SingleCentroidQuery<float>*>(query)->rotated_query();
+}
+
+float rabitq_single_centroid_query_delta(const SingleCentroidQuery* query) {
+    return reinterpret_cast<const rabitqlib::SingleCentroidQuery<float>*>(query)->delta();
+}
+
+float rabitq_single_centroid_query_vl(const SingleCentroidQuery* query) {
+    return reinterpret_cast<const rabitqlib::SingleCentroidQuery<float>*>(query)->vl();
+}
+
+float rabitq_single_centroid_query_k1xsumq(const SingleCentroidQuery* query) {
+    return reinterpret_cast<const rabitqlib::SingleCentroidQuery<float>*>(query)->k1xsumq();
+}
+
+float rabitq_single_centroid_query_kbxsumq(const SingleCentroidQuery* query) {
+    return reinterpret_cast<const rabitqlib::SingleCentroidQuery<float>*>(query)->kbxsumq();
+}
+
+float rabitq_single_centroid_query_g_add(const SingleCentroidQuery* query) {
+    return reinterpret_cast<const rabitqlib::SingleCentroidQuery<float>*>(query)->g_add();
+}
+
+float rabitq_single_centroid_query_g_error(const SingleCentroidQuery* query) {
+    return reinterpret_cast<const rabitqlib::SingleCentroidQuery<float>*>(query)->g_error();
+}
+
+void rabitq_single_centroid_query_set_g_add(SingleCentroidQuery* query, float norm, float ip) {
+    reinterpret_cast<rabitqlib::SingleCentroidQuery<float>*>(query)->set_g_add(norm, ip);
+}
+
+void rabitq_single_centroid_query_set_g_error(SingleCentroidQuery* query, float norm) {
+    reinterpret_cast<rabitqlib::SingleCentroidQuery<float>*>(query)->set_g_error(norm);
+}
+
+void rabitq_single_centroid_estdist(
+    const char* bin_data,
+    const SingleCentroidQuery* q_obj,
+    size_t padded_dim,
+    float* ip_x0_qr,
+    float* est_dist,
+    float* low_dist,
+    float g_add,
+    float g_error
+) {
+    const auto* cpp_q_obj = reinterpret_cast<const rabitqlib::SingleCentroidQuery<float>*>(q_obj);
+    rabitqlib::single_centroid_estdist(
+        bin_data,
+        *cpp_q_obj,
+        padded_dim,
+        *ip_x0_qr,
+        *est_dist,
+        *low_dist,
+        g_add,
+        g_error
+    );
+}
+
+void rabitq_single_centroid_fulldist(
+    const SingleCentroidQuery* q_obj,
+    const char* bin_data,
+    const char* ex_data,
+    float (*ip_func_)(const float*, const uint8_t*, size_t),
+    size_t padded_dim,
+    size_t ex_bits,
+    float* est_dist,
+    float* low_dist,
+    float* ip_x0_qr,
+    float g_add,
+    float g_error
+) {
+    auto* cpp_q_obj = reinterpret_cast<const rabitqlib::SingleCentroidQuery<float>*>(q_obj);
+    rabitqlib::single_centroid_fulldist(
+        bin_data,
+        ex_data,
+        ip_func_,
+        *cpp_q_obj,
+        padded_dim,
+        ex_bits,
+        *est_dist,
+        *low_dist,
+        *ip_x0_qr,
+        g_add,
+        g_error
+    );
+}
 }

@@ -107,6 +107,91 @@ class SplitBatchQuery {
 };
 
 template <typename T>
+class SingleCentroidQuery {
+   private:
+    const T* rotated_query_;
+    std::vector<T> residual_query_;
+    std::vector<uint64_t> QueryBin_;
+    T G_add_;
+    T G_k1xSumq_;
+    T G_kbxSumq_;
+    T G_error_;
+    T delta_;
+    T vl_;
+    MetricType metric_type_ = METRIC_L2;
+
+   public:
+    static constexpr size_t kNumBits = 4;
+    explicit SingleCentroidQuery(
+        const T* rotated_query,
+        const T* centroid,
+        size_t padded_dim,
+        size_t ex_bits,
+        quant::RabitqConfig config,
+        size_t metric_type = METRIC_L2
+    )
+        : rotated_query_(rotated_query), residual_query_(padded_dim), QueryBin_(padded_dim * kNumBits / 64, 0) {
+        float c_1 = -static_cast<float>((1 << 1) - 1) / 2.F;
+        float c_b = -static_cast<float>((1 << (ex_bits + 1)) - 1) / 2.F;
+        
+        for (size_t i = 0; i < padded_dim; ++i) {
+            residual_query_[i] = rotated_query[i] - centroid[i];
+        }
+        // T sumq =
+        //     std::accumulate(rotated_query_, rotated_query_ + padded_dim, static_cast<T>(0));
+        T sumq =
+            std::accumulate(residual_query_.begin(), residual_query_.end(), static_cast<T>(0));
+
+        G_k1xSumq_ = sumq * c_1;
+        G_kbxSumq_ = sumq * c_b;
+
+        metric_type_ = (metric_type == METRIC_IP) ? METRIC_IP : METRIC_L2;
+
+        std::vector<uint16_t> quant_query = std::vector<uint16_t>(padded_dim);
+
+        // quantize query by rabitq
+        quant::quantize_centroid<float, uint16_t>(
+            rotated_query, centroid, padded_dim, kNumBits, quant_query.data(), delta_, vl_, config
+        );
+
+        // represent quantized query as u64
+        rabitqlib::new_transpose_bin(
+            quant_query.data(), QueryBin_.data(), padded_dim, kNumBits
+        );
+    }
+
+    [[nodiscard]] const uint64_t* query_bin() const { return QueryBin_.data(); }
+
+    [[nodiscard]] const T* rotated_query() const { return rotated_query_; }
+
+    [[nodiscard]] const T* residual_query() const { return residual_query_.data(); }
+
+    [[nodiscard]] T delta() const { return delta_; }
+
+    [[nodiscard]] T vl() const { return vl_; }
+
+    [[nodiscard]] T k1xsumq() const { return G_k1xSumq_; }
+
+    [[nodiscard]] T kbxsumq() const { return G_kbxSumq_; }
+
+    [[nodiscard]] T g_add() const { return G_add_; }
+
+    [[nodiscard]] T g_error() const { return G_error_; }
+
+    void set_g_add(T norm, T ip = 0) {
+        if (metric_type_ == METRIC_L2) {
+            G_add_ = norm * norm;
+            G_error_ = norm;
+        } else if (metric_type_ == METRIC_IP) {
+            G_add_ = -ip;
+            G_error_ = norm;
+        }
+    }
+
+    void set_g_error(T norm) { G_error_ = norm; }
+};
+
+template <typename T>
 class SplitSingleQuery {
    private:
     const T* rotated_query_;
@@ -180,5 +265,4 @@ class SplitSingleQuery {
 
     void set_g_error(T norm) { G_error_ = norm; }
 };
-
 }  // namespace rabitqlib

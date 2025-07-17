@@ -215,24 +215,60 @@ inline void split_single_estdist(
 /**
  * @brief 1-bit distance estimation for a single vector (no FastScan)
  */
-inline void split_single_estdist(
+inline void single_centroid_estdist(
     const char* bin_data,
-    const SplitSingleQuery<float>& q_obj,
+    const SingleCentroidQuery<float>& q_obj,
     size_t padded_dim,
+    float& ip_x0_qr,
     float& est_dist,
-    float g_add = 0
+    float& low_dist,
+    float g_add = 0,
+    float g_error = 0
 ) {
     ConstBinDataMap<float> cur_bin(bin_data, padded_dim);
 
-    float ip_x0_qr = warmup_ip_x0_q<SplitSingleQuery<float>::kNumBits>(
+    ip_x0_qr = warmup_ip_x0_q<SingleCentroidQuery<float>::kNumBits>(
         cur_bin.bin_code(),
         q_obj.query_bin(),
         q_obj.delta(),
         q_obj.vl(),
         padded_dim,
-        SplitSingleQuery<float>::kNumBits
+        SingleCentroidQuery<float>::kNumBits
     );
 
     est_dist = cur_bin.f_add() + g_add + cur_bin.f_rescale() * (ip_x0_qr + q_obj.k1xsumq());
+
+    low_dist = est_dist - cur_bin.f_error() * g_error;
+};
+
+/**
+ * @brief Full bits distance estimation for a single vector.
+ */
+inline void single_centroid_fulldist(
+    const char* bin_data,
+    const char* ex_data,
+    float (*ip_func_)(const float*, const uint8_t*, size_t),
+    const SingleCentroidQuery<float>& q_obj,
+    size_t padded_dim,
+    size_t ex_bits,
+    float& est_dist,
+    float& low_dist,
+    float& ip_x0_qr,
+    float g_add,
+    float g_error
+) {
+    ConstBinDataMap<float> cur_bin(bin_data, padded_dim);
+    ConstExDataMap<float> cur_ex(ex_data, padded_dim, ex_bits);
+
+    // [TODO: optimize this function]
+    ip_x0_qr = mask_ip_x0_q(q_obj.rotated_query(), cur_bin.bin_code(), padded_dim);
+
+    est_dist =
+        cur_ex.f_add_ex() + g_add +
+        (cur_ex.f_rescale_ex() *
+         (static_cast<float>(1 << (ex_bits)) * ip_x0_qr +
+          ip_func_(q_obj.rotated_query(), cur_ex.ex_code(), padded_dim) + q_obj.kbxsumq()));
+
+    low_dist = est_dist - cur_bin.f_error() * g_error / static_cast<float>(1 << ex_bits);
 };
 }  // namespace rabitqlib

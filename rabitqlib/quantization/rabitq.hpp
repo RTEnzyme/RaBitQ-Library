@@ -353,6 +353,23 @@ inline void quantize_scalar(
 }
 
 template <typename T, typename TP>
+inline void quantize_centroid(
+    const T* data,
+    const T* centroid,
+    size_t dim,
+    size_t total_bits,
+    TP* total_code,
+    T& delta,
+    T& vl,
+    RabitqConfig config = RabitqConfig(),
+    ScalarQuantizerType scalar_quantizer_type = ScalarQuantizerType::RECONSTRUCTION
+) {
+    rabitq_impl::total_bits::rabitq_scalar_impl<T, TP>(
+        data, centroid, dim, total_bits, total_code, delta, vl, config.t_const, scalar_quantizer_type
+    );
+}
+
+template <typename T, typename TP>
 inline void reconstruct_vec(
     const TP* quantized_vec, T delta, T vl, size_t dim, T* results
 ) {

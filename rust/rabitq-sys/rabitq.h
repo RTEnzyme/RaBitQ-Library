@@ -23,6 +23,7 @@ enum MetricType {
 typedef struct SplitBatchQuery SplitBatchQuery;
 typedef struct SplitSingleQuery SplitSingleQuery;
 typedef struct BatchQuery BatchQuery;
+typedef struct SingleCentroidQuery SingleCentroidQuery;
 
 RabitqConfig* rabitq_config_new();
 void rabitq_config_free(RabitqConfig* config);
@@ -95,6 +96,15 @@ float rabitq_split_distance_boosting_with_batch_query(
     const char* ex_data,
     float (*ip_func_)(const float*, const uint8_t*, size_t),
     const SplitBatchQuery* q_obj,
+    size_t padded_dim,
+    size_t ex_bits,
+    float ip_x0_qr
+);
+
+float rabitq_split_distance_boosting_with_centroid_query(
+    const char* ex_data,
+    float (*ip_func_)(const float*, const uint8_t*, size_t),
+    const SingleCentroidQuery* q_obj,
     size_t padded_dim,
     size_t ex_bits,
     float ip_x0_qr
@@ -173,6 +183,51 @@ void rabitq_qg_batch_estdist(
     float* est_distance
 );
 
+// SingleCentroidQuery
+SingleCentroidQuery* rabitq_single_centroid_query_new(
+    const float* rotated_query,
+    const float* centroid,
+    size_t padded_dim,
+    size_t ex_bits,
+    const RabitqConfig* config,
+    enum MetricType metric_type
+);
+void rabitq_single_centroid_query_free(SingleCentroidQuery* query);
+const uint64_t* rabitq_single_centroid_query_query_bin(const SingleCentroidQuery* query);
+const float* rabitq_single_centroid_query_rotated_query(const SingleCentroidQuery* query);
+float rabitq_single_centroid_query_delta(const SingleCentroidQuery* query);
+float rabitq_single_centroid_query_vl(const SingleCentroidQuery* query);
+float rabitq_single_centroid_query_k1xsumq(const SingleCentroidQuery* query);
+float rabitq_single_centroid_query_kbxsumq(const SingleCentroidQuery* query);
+float rabitq_single_centroid_query_g_add(const SingleCentroidQuery* query);
+float rabitq_single_centroid_query_g_error(const SingleCentroidQuery* query);
+void rabitq_single_centroid_query_set_g_add(SingleCentroidQuery* query, float norm, float ip);
+void rabitq_single_centroid_query_set_g_error(SingleCentroidQuery* query, float norm);
+
+void rabitq_single_centroid_estdist(
+    const char* bin_data,
+    const SingleCentroidQuery* q_obj,
+    size_t padded_dim,
+    float* ip_x0_qr,
+    float* est_dist,
+    float* low_dist,
+    float g_add,
+    float g_error
+);
+
+void rabitq_single_centroid_fulldist(
+    const SingleCentroidQuery* q_obj,
+    const char* bin_data,
+    const char* ex_data,
+    float (*ip_func_)(const float*, const uint8_t*, size_t),
+    size_t padded_dim,
+    size_t ex_bits,
+    float* est_dist,
+    float* low_dist,
+    float* ip_x0_qr,
+    float g_add,
+    float g_error
+);
 #ifdef __cplusplus
 }
 #endif
