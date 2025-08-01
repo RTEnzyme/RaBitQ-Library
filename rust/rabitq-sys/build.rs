@@ -6,6 +6,28 @@ use std::env;
 use std::path::PathBuf;
 
 fn main() {
+    // println!("cargo:rerun-if-changed=../../rabitqlib");
+    // println!("cargo:rerun-if-changed=../../rabitqlib/**/*.hpp");
+    // println!("cargo:rerun-if-changed=../../rabitqlib/**/*.cpp");
+    // println!("cargo:rerun-if-changed=rabitq_wrapper.cpp");
+    // println!("cargo:rerun-if-changed=rabitq.h");
+
+    // 递归检测rabitqlib目录下的所有头文件和源文件
+    let rabitqlib_path = "../../rabitqlib";
+    if let Ok(entries) = std::fs::read_dir(rabitqlib_path) {
+        for entry in entries.flatten() {
+            if let Ok(file_type) = entry.file_type() {
+                if file_type.is_file() {
+                    if let Some(ext) = entry.path().extension() {
+                        if ext == "hpp" || ext == "cpp" {
+                            println!("cargo:rerun-if-changed={}", entry.path().display());
+                        }
+                    }
+                }
+            }
+        }
+    }
+    
     // Compile the C++ wrapper.
     cc::Build::new()
         .file("rabitq_wrapper.cpp")

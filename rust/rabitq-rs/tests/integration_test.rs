@@ -228,7 +228,7 @@ fn test_single_centroid_estimator() {
     );
     // calculate the exact inner product
     let ip = (&rotated_query - &Array1::from(centroid.clone()))
-        .dot(&vectors.row(0));
+        .dot(&(&vectors.row(0) - &Array1::from(centroid.clone())));
     println!("ip: {:?}", ip);
 
     // 4.2 distance boosting

@@ -580,6 +580,141 @@ static inline void rabitq_scalar_impl(
     vl = delta * cb;
 }
 
+// ==============================================================
+// compute the min and max value of the entries of q
+// ==============================================================
+void rangeSIMD(float* q, float* c, float& vl, float &vr, int B)
+{
+    vl = +1e20;
+    vr = -1e20;
+
+    __m256 min_m = _mm256_set1_ps(vl);
+    __m256 max_m = _mm256_set1_ps(vr);
+    for(int i = 0; i < B; i += 8) {
+        __m256 v01 = _mm256_loadu_ps(q + i);
+        __m256 v02 = _mm256_loadu_ps(c + i);
+        __m256 t = _mm256_sub_ps(v01, v02);
+        max_m = _mm256_max_ps(max_m, t);
+        min_m = _mm256_min_ps(min_m, t);
+    }
+    std::vector<float> r(8);
+    _mm256_storeu_ps(r.data(), max_m);
+    vr = *std::max_element(r.begin(), r.end());
+
+    _mm256_storeu_ps(r.data(), min_m);
+    vl = *std::min_element(r.begin(), r.end());
+}
+
+// ==============================================================
+// quantize the query vector with uniform scalar quantization
+// result:= output 这个就是得到q_u[i]
+// q := rd_query
+// c := centroid
+// u := 全0.5
+// vl:= vl
+// width:= delta
+// sum_q := output  q_u[i] 的sum
+// ==============================================================
+void quantizeSIMD(uint8_t *result, float *q, float* c, const float * u, float vl, float width, uint32_t &sum_q, int B){
+    //float one_over_width = 1.0 / width;
+    uint8_t *ptr_res = result; //这里uint8 但是实际只有4bit 即没有sq的q_u[i]
+
+    __m256 vl_256 = _mm256_set1_ps(vl);
+    __m256 width_256 = _mm256_set1_ps(width);
+    __m256 u_256 = _mm256_set1_ps(u[0]);
+    __m256i sum_256 = _mm256_set1_epi8(0);
+    const __mmask8 ff_mask = 0xff;
+    for(int i=0; i<B; i+=8) {
+        //对应公式18， uint8的转换是因为转换后不会超过uint8
+        __m256 v01 = _mm256_loadu_ps(q + i);
+        __m256 v02 = _mm256_loadu_ps(c + i);
+        __m256 t = _mm256_sub_ps(v01, v02); //q-c
+        t = _mm256_sub_ps(t, vl_256); // q-c -vl
+        t = _mm256_div_ps(t, width_256); // (q - c - vl) / width
+        t = _mm256_add_ps(t, u_256);
+
+        __m256i ti = _mm256_cvtps_epi32(t); //float to int
+        sum_256 = _mm256_add_epi32(sum_256, ti);
+        _mm256_mask_cvtepi32_storeu_epi8((void*)(ptr_res+i), ff_mask, ti);
+    }
+    uint32_t u32_t[8];
+    sum_q = 0;
+    _mm256_storeu_si256(reinterpret_cast<__m256i*>(u32_t), sum_256);
+    for(int i = 0; i < 8; i++) {
+        sum_q += u32_t[i];
+    }
+}
+
+void simd_residual_query(std::vector<float>& processed_query, float* random_cent_vec, float* query_residual,
+                          uint32_t ndims,
+                          float& query_square_dist_to_centroid, //output
+                          float& sum_longq //output
+                          )
+{//        query_residual[d] =  processed_query[d] - random_cent_vec[d];
+ //        query_square_dist_to_centroid += query_residual[d] * query_residual[d];
+ //        sum_longq += query_residual[d];
+    __m512 l2dist_to_cent = _mm512_setzero_ps();
+    __m512 sum_residual = _mm512_setzero_ps();
+    for (uint32_t d = 0; d < ndims; d+=16)
+    {
+        __m512 q_0 = _mm512_loadu_ps(processed_query.data()+d);
+        __m512 c_0 = _mm512_loadu_ps(random_cent_vec+d);
+        __m512 r_0 = _mm512_sub_ps(q_0, c_0);
+        l2dist_to_cent = _mm512_fmadd_ps(r_0, r_0, l2dist_to_cent);
+        sum_residual = _mm512_add_ps(sum_residual, r_0);
+        _mm512_storeu_ps(query_residual+d, r_0);
+    }
+
+    query_square_dist_to_centroid = _mm512_reduce_add_ps(l2dist_to_cent);
+    sum_longq = _mm512_reduce_add_ps(sum_residual);
+}
+
+template <typename T, typename TP>
+static inline void rabitq_centroid_impl(
+    const T* data,
+    const T* centroid,
+    size_t dim,
+    size_t total_bits,
+    TP* total_code,
+    T& delta,
+    T& vl,
+    T& centroid_ip,
+    T& sumq_centroid,
+    double t_const = -1
+) {
+    std::vector<int> binary_code(dim);
+    size_t ex_bits = total_bits - 1;
+
+    float vr;
+    rangeSIMD((float*)data, (float*)centroid, vl, vr, dim);
+
+    delta = (vr - vl) / ((1 << total_bits) - 1);
+
+    RowMajorArray<T> residual_arr =
+        rabitq_impl::one_bit::one_bit_code(data, centroid, dim, binary_code.data());
+
+
+    if (ex_bits > 0) {
+        ex_bits::ex_bits_code<T, TP>(
+            residual_arr.data(), dim, ex_bits, total_code, t_const
+        );
+    }
+
+    // merge 2 one_bit code and ex_bits code
+    for (size_t i = 0; i < dim; ++i) {
+        total_code[i] += static_cast<TP>(binary_code[i]) << ex_bits;
+        sumq_centroid += binary_code[i];
+    }
+
+    float cb = -(static_cast<float>(1 << ex_bits) - 0.5F);
+    RowMajorArrayMap<TP> total_code_arr(total_code, 1, dim);
+    RowMajorArray<T> u_cb = total_code_arr.template cast<T>() + cb;
+    
+    // 新增：计算质心与查询向量的内积
+    centroid_ip = dot_product<T>(centroid, data, dim);
+
+}
+
 template <typename T, typename TP>
 static inline void rabitq_full_impl(
     const T* data,

@@ -126,3 +126,77 @@ inline float warmup_ip_x0_q(
 
     return (delta * static_cast<float>(ip)) + (vl * static_cast<float>(ppc));
 }
+
+template <uint32_t b_query>
+inline float warmup_ip_centroid_q(
+    const uint64_t* data,   // 相对于centroid量化的数据
+    const uint64_t* query,  // 相对于centroid量化的查询
+    float delta,
+    float vl,
+    size_t padded_dim,
+    [[maybe_unused]] size_t _b_query = 0
+) {
+    const size_t num_blk = padded_dim / 64;
+    size_t ip_scalar = 0;
+    size_t ppc_scalar = 0;
+
+    const size_t vec_width = 8;
+    size_t vec_end = (num_blk / vec_width) * vec_width;
+
+    __m512i ip_vec = _mm512_setzero_si512();
+    __m512i ppc_vec = _mm512_setzero_si512();
+
+    // 计算cB = -(2^b_query - 1)/2
+    const float cB = -(static_cast<float>((1ULL << b_query) - 1)) / 2.0f;
+
+    for (size_t i = 0; i < vec_end; i += vec_width) {
+        __m512i x_vec = _mm512_loadu_si512(reinterpret_cast<const __m512i*>(data + i));
+        __m512i popcnt_x_vec = _mm512_popcnt_epi64(x_vec);
+        ppc_vec = _mm512_add_epi64(ppc_vec, popcnt_x_vec);
+
+        __m512i block_ip = _mm512_setzero_si512();
+
+        for (uint32_t j = 0; j < b_query; j++) {
+            uint64_t indices[vec_width];
+            for (size_t k = 0; k < vec_width; k++) {
+                indices[k] = ((i + k) * b_query + j);
+            }
+            __m512i index_vec = _mm512_loadu_si512(indices);
+            __m512i q_vec = _mm512_i64gather_epi64(index_vec, query, 8);
+
+            __m512i and_vec = _mm512_and_si512(x_vec, q_vec);
+            __m512i popcnt_and = _mm512_popcnt_epi64(and_vec);
+
+            const uint64_t shift = 1ULL << j;
+            __m512i shift_vec = _mm512_set1_epi64(shift);
+            __m512i weighted = _mm512_mullo_epi64(popcnt_and, shift_vec);
+
+            block_ip = _mm512_add_epi64(block_ip, weighted);
+        }
+        ip_vec = _mm512_add_epi64(ip_vec, block_ip);
+    }
+
+    uint64_t ip_arr[vec_width];
+    uint64_t ppc_arr[vec_width];
+    _mm512_storeu_si512(reinterpret_cast<__m512i*>(ip_arr), ip_vec);
+    _mm512_storeu_si512(reinterpret_cast<__m512i*>(ppc_arr), ppc_vec);
+
+    for (size_t k = 0; k < vec_width; k++) {
+        ip_scalar += ip_arr[k];
+        ppc_scalar += ppc_arr[k];
+    }
+
+    for (size_t i = vec_end; i < num_blk; i++) {
+        const uint64_t x = data[i];
+        ppc_scalar += __builtin_popcountll(x);
+        for (uint32_t j = 0; j < b_query; j++) {
+            ip_scalar += __builtin_popcountll(x & query[i * b_query + j]) << j;
+        }
+    }
+
+    // 根据RaBitQ推导公式计算内积估计
+    // -⟨or,qr⟩ ≈ -⟨qr,c⟩ + ⟨or−c,c⟩ - Δx⟨o¯,o⟩⋅[⟨xu,qr′⟩+cBSq]
+    float ip_est = (delta * static_cast<float>(ip_scalar)) + (vl * static_cast<float>(ppc_scalar));
+    
+    return ip_est;
+}

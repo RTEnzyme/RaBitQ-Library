@@ -361,11 +361,12 @@ inline void quantize_centroid(
     TP* total_code,
     T& delta,
     T& vl,
-    RabitqConfig config = RabitqConfig(),
-    ScalarQuantizerType scalar_quantizer_type = ScalarQuantizerType::RECONSTRUCTION
+    T& centroid_ip,
+    T& sumq_centroid,
+    RabitqConfig config = RabitqConfig()
 ) {
-    rabitq_impl::total_bits::rabitq_scalar_impl<T, TP>(
-        data, centroid, dim, total_bits, total_code, delta, vl, config.t_const, scalar_quantizer_type
+    rabitq_impl::total_bits::rabitq_centroid_impl<T, TP>(
+        data, centroid, dim, total_bits, total_code, delta, vl, centroid_ip, sumq_centroid, config.t_const
     );
 }
 

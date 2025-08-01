@@ -118,6 +118,8 @@ class SingleCentroidQuery {
     T G_error_;
     T delta_;
     T vl_;
+    T centroid_ip_;
+    T sumq_centroid_;
     MetricType metric_type_ = METRIC_L2;
 
    public:
@@ -137,10 +139,10 @@ class SingleCentroidQuery {
         for (size_t i = 0; i < padded_dim; ++i) {
             residual_query_[i] = rotated_query[i] - centroid[i];
         }
-        // T sumq =
-        //     std::accumulate(rotated_query_, rotated_query_ + padded_dim, static_cast<T>(0));
         T sumq =
             std::accumulate(residual_query_.begin(), residual_query_.end(), static_cast<T>(0));
+        // T sumq =
+        //     std::accumulate(residual_query_.begin(), residual_query_.end(), static_cast<T>(0));
 
         G_k1xSumq_ = sumq * c_1;
         G_kbxSumq_ = sumq * c_b;
@@ -151,7 +153,7 @@ class SingleCentroidQuery {
 
         // quantize query by rabitq
         quant::quantize_centroid<float, uint16_t>(
-            rotated_query, centroid, padded_dim, kNumBits, quant_query.data(), delta_, vl_, config
+            rotated_query, centroid, padded_dim, kNumBits, quant_query.data(), delta_, vl_, centroid_ip_, sumq_centroid_, config
         );
 
         // represent quantized query as u64
@@ -162,9 +164,14 @@ class SingleCentroidQuery {
 
     [[nodiscard]] const uint64_t* query_bin() const { return QueryBin_.data(); }
 
+
     [[nodiscard]] const T* rotated_query() const { return rotated_query_; }
 
     [[nodiscard]] const T* residual_query() const { return residual_query_.data(); }
+
+    [[nodiscard]] T centroid_ip() const { return centroid_ip_; }
+
+    [[nodiscard]] T sumq_centroid() const { return sumq_centroid_; }
 
     [[nodiscard]] T delta() const { return delta_; }
 

@@ -236,9 +236,8 @@ inline void single_centroid_estdist(
         SingleCentroidQuery<float>::kNumBits
     );
 
-    est_dist = cur_bin.f_add() + g_add + cur_bin.f_rescale() * (ip_x0_qr + q_obj.k1xsumq());
 
-    low_dist = est_dist - cur_bin.f_error() * g_error;
+    est_dist = cur_bin.f_add() + g_add + cur_bin.f_rescale() * (ip_x0_qr + q_obj.k1xsumq());
 };
 
 /**
